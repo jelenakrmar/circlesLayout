@@ -9,7 +9,7 @@
 #import "CirclesLayout.h"
 
 #define kMinSpaceBetweenCircles 10
-#define kMaxPredecessorNum 4
+#define kMaxPredecessorNum 10 // USED FOR OPTIMIZATION. TO AVOID ITERATING OVER ALL PREDECESSORS EVERY TIME. ADAPT THIS NUMBER BASED ON THE CIRCLE SIZE AND SCREEN DIMENSIONS
 #define kPositionIncrement 5
 
 @implementation CirclesLayout
@@ -32,13 +32,14 @@
 
 // Initial settings.
 - (void)setup {
+    self.vertical = NO; // CHANGE THIS TO MAKE HORIZONTAL LAYOUT
     self.viewInsets = UIEdgeInsetsMake(20, 20, 20, 20); // top, left, bottom, right
 }
 
 #pragma mark - Required functions for custom layouts
 
 - (CGSize)collectionViewContentSize {
-    return CGSizeMake(self.collectionView.bounds.size.width, self.contentHeight);
+    return CGSizeMake(self.contentWidth, self.contentHeight);
 }
 
 - (UICollectionViewLayoutAttributes *)layoutAttributesForItemAtIndexPath:(NSIndexPath *)indexPath {
@@ -63,10 +64,22 @@
 
 // Caching layout attributes.
 - (void)prepareLayout {
-    NSMutableDictionary *newLayoutInfo = [NSMutableDictionary dictionary];
-    self.contentHeight = self.viewInsets.top;
     self.initialX = self.viewInsets.left;
     self.initialY = self.viewInsets.top;
+    
+    if (self.vertical) {
+        [self prepareVertical];
+    }
+    else {
+        [self prepareHorizontal];
+    }
+}
+
+- (void)prepareVertical {
+    NSMutableDictionary *newLayoutInfo = [NSMutableDictionary dictionary];
+    
+    self.contentHeight = self.viewInsets.top;
+    self.contentWidth = self.collectionView.bounds.size.width; // FIXED WITH
     
     NSIndexPath *indexPath;
     NSInteger itemCount = [self.collectionView numberOfItemsInSection:0];
@@ -80,10 +93,35 @@
         
         newLayoutInfo[indexPath] = itemAttributes;
         
-        self.contentHeight = MAX(self.contentHeight, (itemAttributes.frame.origin.y + itemAttributes.frame.size.height));
+        self.contentHeight = MAX(self.contentHeight, (itemAttributes.frame.origin.y + itemAttributes.frame.size.height)); // ADAPT HEIGHT
     }
     
     self.contentHeight += self.viewInsets.bottom;
+    self.layoutInfo = newLayoutInfo;
+}
+
+- (void)prepareHorizontal {
+    NSMutableDictionary *newLayoutInfo = [NSMutableDictionary dictionary];
+    
+    self.contentWidth = self.viewInsets.left;
+    self.contentHeight = self.collectionView.bounds.size.height; // FIXED HEIGHT
+    
+    NSIndexPath *indexPath;
+    NSInteger itemCount = [self.collectionView numberOfItemsInSection:0];
+    
+    for (NSInteger item = 0; item < itemCount; item++) {
+        indexPath = [NSIndexPath indexPathForItem:item inSection:0];
+        
+        UICollectionViewLayoutAttributes *itemAttributes =
+        [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:indexPath];
+        itemAttributes.frame = [self frameForCircleAtIndexPath:indexPath layoutInfo:newLayoutInfo];
+        
+        newLayoutInfo[indexPath] = itemAttributes;
+        
+        self.contentWidth = MAX(self.contentWidth, (itemAttributes.frame.origin.x + itemAttributes.frame.size.width)); // ADAPT WIDTH
+    }
+    
+    self.contentWidth += self.viewInsets.right;
     self.layoutInfo = newLayoutInfo;
 }
 
@@ -91,26 +129,45 @@
 
 // The size and position of a single circle.
 - (CGRect)frameForCircleAtIndexPath:(NSIndexPath *)indexPath layoutInfo:(NSMutableDictionary *)newLayoutInfo {
+    
     float originX = self.initialX, originY = self.initialY;
-    float width = [self sizeForItemAtIndexPath:indexPath].width;
-    CGRect circle;
+    float radius = [self sizeForItemAtIndexPath:indexPath].width;
+    CGRect circle = CGRectMake(originX, originY, radius, radius);
     
-    circle = CGRectMake(originX, originY, width, width);
-    while (![self distanceConditionForItem:circle AtIndexPath:indexPath InLayout:newLayoutInfo]) {
-        originX += kPositionIncrement;
-        
-        if (originX + width + self.viewInsets.right > self.collectionView.bounds.size.width) {
-            originX = self.viewInsets.left;
-            originY += kPositionIncrement;
+    if (self.vertical) {
+        while (![self distanceConditionForItem:circle AtIndexPath:indexPath InLayout:newLayoutInfo]) {
+            originX += kPositionIncrement;
+            
+            if (originX + radius + self.viewInsets.right > self.collectionView.bounds.size.width) {
+                originX = self.viewInsets.left;
+                originY += kPositionIncrement;
+            }
+            circle = CGRectMake(originX, originY, radius, radius);
         }
-        circle = CGRectMake(originX, originY, width, width);
+        
+        // Set initial X i Y.
+        self.initialX = originX + (radius / 2);
+        self.initialY = originY;
+        
+        return CGRectMake(originX, originY, radius, radius);
     }
-    
-    // Set initial X i Y.
-    self.initialX = originX + (width / 2);
-    self.initialY = originY;
-    
-    return CGRectMake(originX, originY, width, width);
+    else {
+        while (![self distanceConditionForItem:circle AtIndexPath:indexPath InLayout:newLayoutInfo]) {
+            originY += kPositionIncrement;
+            
+            if (originY + radius + self.viewInsets.bottom > self.collectionView.bounds.size.height) {
+                originY = self.viewInsets.top;
+                originX += kPositionIncrement;
+            }
+            circle = CGRectMake(originX, originY, radius, radius);
+        }
+        
+        // Set initial X i Y.
+        self.initialX = originX;
+        self.initialY = originY + (radius / 2);
+        
+        return CGRectMake(originX, originY, radius, radius);
+    }
 }
 
 - (CGSize)sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
